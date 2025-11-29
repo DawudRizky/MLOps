@@ -1,0 +1,2 @@
+# Trained models directory
+# Models will be versioned with DVC and registered in MLflow

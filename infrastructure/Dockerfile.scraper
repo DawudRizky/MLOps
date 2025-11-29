@@ -1,0 +1,27 @@
+# Dockerfile for Twitter Scraper
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements (use src/requirements.txt)
+COPY src/requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir twikit
+
+# Copy application code
+COPY src/scraper /app/scraper
+COPY src/common /app/common
+
+# Create data directory
+RUN mkdir -p /app/data/raw
+
+# Run scraper service
+CMD ["python", "-m", "scraper.main"]

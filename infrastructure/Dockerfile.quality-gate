@@ -1,0 +1,26 @@
+# Dockerfile for Quality Gate Service
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements (use src/requirements.txt)
+COPY src/requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/quality_gate /app/quality_gate
+COPY src/common /app/common
+
+# Create directories
+RUN mkdir -p /app/reports
+
+# Run quality gate service
+CMD ["python", "-m", "quality_gate.main"]

@@ -1,0 +1,267 @@
+# ====================
+# SENSITIVE DATA
+# ====================
+# Twitter authentication
+cookies.json
+*.cookie
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Credentials & keys
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# ====================
+# DOCUMENTATION (temporary exclusion)
+# ====================
+DOCUMENTATION.md
+LAPORAN_IMPLEMENTASI.md
+ANTI_BOT_ENHANCEMENTS.md
+SCHEDULER_SERVICE_DOCS.md
+SCRAPER_STRATEGY_ANALYSIS.md
+README.md
+
+# ====================
+# DATA & MODELS
+# ====================
+# Raw data (managed by DVC)
+data/raw/**/*.json
+data/raw/**/*.csv
+data/processed/**/*.json
+data/processed/**/*.csv
+data/processed/**/*.parquet
+
+# Keep .gitkeep files
+!data/**/.gitkeep
+
+# DVC cache
+.dvc/cache/
+.dvc/tmp/
+
+# Models (managed by DVC)
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pt
+models/*.pth
+models/*.onnx
+models/artifacts/
+
+# MLflow artifacts
+mlruns/
+mlflow-artifacts/
+
+# Reports
+reports/*.html
+reports/*.pdf
+reports/*.png
+
+# ====================
+# PYTHON
+# ====================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# ====================
+# DOCKER
+# ====================
+# Docker volumes
+docker-volumes/
+volumes/
+
+# Docker logs
+*.log
+
+# Docker Compose overrides
+docker-compose.override.yml
+
+# ====================
+# NODE.JS (Frontend)
+# ====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build output
+dist/
+dist-ssr/
+build/
+
+# Frontend environment
+.env.production
+.env.development
+
+# ====================
+# IDE & EDITORS
+# ====================
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ====================
+# OS
+# ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.Trash-*
+.nfs*
+
+# ====================
+# MONITORING & LOGS
+# ====================
+# Logs
+logs/
+*.log
+*.log.*
+
+# Prometheus data
+prometheus-data/
+
+# Grafana data
+grafana-data/
+
+# Loki data
+loki-data/
+
+# ====================
+# TEMPORARY FILES
+# ====================
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.cache
+
+# ====================
+# TESTING
+# ====================
+# Test coverage
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# Test outputs
+test-results/
+test-reports/
+
+# ====================
+# MISC
+# ====================
+# DVC
+.dvc/tmp/
+
+# MinIO data
+minio-data/
+
+# PostgreSQL data
+postgres-data/
+
+# Redis data
+redis-data/
