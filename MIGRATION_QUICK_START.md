@@ -12,7 +12,7 @@
 | **PostgreSQL DB** | 68 MB | Postgres volume | 🔴 Critical |
 | **Tweets** | 3,058 records | PostgreSQL | 🔴 Critical |
 | **ML Experiments** | 66 runs | PostgreSQL + MinIO | 🔴 Critical |
-| **Airflow Logs** | 4.9 GB | /root/airflow/logs | 🟡 Important |
+| **Airflow Logs** | 4.9 GB | /root/twt/airflow/logs | 🟡 Important |
 | **Source Code** | 2.4 MB | Git repo | ✅ In GitHub |
 
 **Total Data to Migrate**: ~37-42 GB

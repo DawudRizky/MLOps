@@ -29,6 +29,16 @@ SCRAPER_STRATEGY_ANALYSIS.md
 README.md
 
 # ====================
+# AIRFLOW
+# ====================
+# Airflow logs (can be large)
+airflow/logs/**
+!airflow/logs/.gitkeep
+
+# Airflow config (may contain sensitive data)
+airflow/config/airflow.cfg
+
+# ====================
 # DATA & MODELS
 # ====================
 # Raw data (managed by DVC)

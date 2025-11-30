@@ -14,11 +14,11 @@
 |-----------|----------|------|-------|---------------|
 | **MinIO (MLflow Artifacts)** | `/var/lib/docker/volumes/twt_minio-data/_data` | **32 GB** | 4,815 files | ✅ **CRITICAL** - 66 ML experiments |
 | **PostgreSQL (MLflow + Tweets)** | `/var/lib/docker/volumes/twt_postgres-data/_data` | 68 MB | N/A | ✅ **CRITICAL** - 3,058 tweets, 66 runs |
-| **Airflow Logs** | `/root/airflow/logs` | 4.9 GB | 2,655 files | ⚠️ **IMPORTANT** - Pipeline execution history |
+| **Airflow Logs** | `/root/twt/airflow/logs` | 4.9 GB | 2,655 files | ⚠️ **IMPORTANT** - Pipeline execution history |
 | **Airflow PostgreSQL** | `/var/lib/docker/volumes/airflow_postgres-db-volume/_data` | 78 MB | N/A | ⚠️ **IMPORTANT** - 294 DAG runs, 1,965 tasks |
 | **Redis Cache** | `/var/lib/docker/volumes/twt_redis-data/_data` | 24 KB | N/A | ⚪ **LOW** - Ephemeral cache |
 | **Source Code** | `/root/twt` | 2.4 MB | N/A | ✅ **CRITICAL** - Already in Git |
-| **Airflow DAGs** | `/root/airflow` | 4.9 GB total | N/A | ✅ **CRITICAL** - DAG definitions |
+| **Airflow DAGs** | `/root/twt/airflow` | 4.9 GB total | N/A | ✅ **CRITICAL** - DAG definitions |
 
 ### Data Breakdown
 
@@ -82,7 +82,7 @@ cd /root/twt
 docker compose down
 
 # Stop Airflow (keep running if you want historical logs)
-cd /root/airflow
+cd /root/twt/airflow
 docker compose down
 ```
 
@@ -156,14 +156,14 @@ docker start mlops-minio
 
 ```bash
 # Copy DAG definitions
-cp -r /root/airflow/dags /root/migration_backup/airflow/
+cp -r /root/twt/airflow/dags /root/migration_backup/airflow/
 
 # Copy logs (optional - large)
 # Only copy recent logs if space is limited
-cp -r /root/airflow/logs /root/migration_backup/airflow/
+cp -r /root/twt/airflow/logs /root/migration_backup/airflow/
 
 # Or copy only last 7 days
-find /root/airflow/logs -mtime -7 -type f \
+find /root/twt/airflow/logs -mtime -7 -type f \
   -exec cp --parents {} /root/migration_backup/airflow/ \;
 ```
 
@@ -179,8 +179,8 @@ cp /root/twt/docker-compose.yml /root/migration_backup/configs/
 cp /root/twt/cookies.json /root/migration_backup/configs/
 
 # Airflow configs
-cp /root/airflow/.env /root/migration_backup/configs/airflow.env
-cp /root/airflow/docker-compose.yaml /root/migration_backup/configs/
+cp /root/twt/airflow/.env /root/migration_backup/configs/airflow.env
+cp /root/twt/airflow/docker-compose.yaml /root/migration_backup/configs/
 
 # Infrastructure configs
 cp -r /root/twt/infrastructure/configs /root/migration_backup/configs/infrastructure/
@@ -263,7 +263,7 @@ sudo apt-get install docker-compose-plugin
 # Clone repository
 git clone https://github.com/DawudRizky/MLOps.git /root/twt
 cd /root/twt
-git clone https://github.com/your-org/airflow-dags.git /root/airflow
+git clone https://github.com/your-org/airflow-dags.git /root/twt/airflow
 ```
 
 #### 4.2 Extract Backup
@@ -278,12 +278,12 @@ tar -xzf migration_backup.tar.gz
 ```bash
 # Restore env files
 cp /root/migration_backup/configs/mlops.env /root/twt/.env
-cp /root/migration_backup/configs/airflow.env /root/airflow/.env
+cp /root/migration_backup/configs/airflow.env /root/twt/airflow/.env
 cp /root/migration_backup/configs/cookies.json /root/twt/
 
 # Restore docker-compose files
 cp /root/migration_backup/configs/docker-compose.yml /root/twt/
-cp /root/migration_backup/configs/docker-compose.yaml /root/airflow/
+cp /root/migration_backup/configs/docker-compose.yaml /root/twt/airflow/
 
 # Restore infrastructure configs
 cp -r /root/migration_backup/configs/infrastructure/* /root/twt/infrastructure/configs/
@@ -364,7 +364,7 @@ docker compose ps
 #### 4.8 Restore Airflow (Optional)
 
 ```bash
-cd /root/airflow
+cd /root/twt/airflow
 
 # Start Airflow
 docker compose up -d
@@ -373,7 +373,7 @@ docker compose up -d
 sleep 60
 
 # Restore DAGs
-cp -r /root/migration_backup/airflow/dags/* /root/airflow/dags/
+cp -r /root/migration_backup/airflow/dags/* /root/twt/airflow/dags/
 
 # Restore database (if needed)
 docker exec -i airflow-postgres-1 pg_restore \
