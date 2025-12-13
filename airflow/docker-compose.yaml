@@ -141,8 +141,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 4G
+          cpus: '1.5'
+          memory: 6G
         reservations:
           cpus: '0.5'
           memory: 2G
@@ -164,11 +164,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 4G
+          cpus: '2.0'
+          memory: 8G
         reservations:
           cpus: '0.5'
-          memory: 2G
+          memory: 3G
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
       interval: 30s
@@ -193,8 +193,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 4G
+          cpus: '1.5'
+          memory: 6G
         reservations:
           cpus: '0.5'
           memory: 2G

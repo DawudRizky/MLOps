@@ -480,6 +480,36 @@ services:
           memory: 64M
 
   # ===================================
+  # DASHBOARD: BERTopic Visualization Frontend
+  # ===================================
+  dashboard:
+    build:
+      context: /root/MLOps
+      dockerfile: infrastructure/Dockerfile.dashboard
+    container_name: mlops-dashboard
+    ports:
+      - "8003:8000"
+    depends_on:
+      - mlflow
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      EXPERIMENT_NAME: bertopic-pemerintah
+      FLASK_ENV: production
+      AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    networks:
+      - mlops-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # ===================================
   # SCRAPER: Twitter Data Collection
   # ===================================
   # NOTE: Use either 'scraper' (24/7 continuous) OR 'scheduler' (scheduled bursts)
@@ -499,7 +529,7 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      REDIS_HOST: redis
+      REDIS_HOST: redisok
       REDIS_PORT: 6379
       TWITTER_COOKIES_FILE: /app/cookies.json
       TWITTER_SEARCH_QUERY: ${TWITTER_SEARCH_QUERY:-pemerintah}

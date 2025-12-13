@@ -48,6 +48,7 @@ class BERTopicTrainer:
         self.embedding_model_name = "indobenchmark/indobert-base-p1"
         self.min_topic_size = 2  # Lowered from 10 for testing with small dataset
         self.nr_topics = "auto"
+        self.embedding_batch_size = 16  # Process embeddings in smaller batches to reduce memory
         
         self.logger.info("Initialized BERTopic Trainer")
     
@@ -109,8 +110,18 @@ class BERTopicTrainer:
         try:
             self.logger.info("Training BERTopic model...")
             
-            # Initialize embedding model
+            # Initialize embedding model with batch size for memory efficiency
             embedding_model = SentenceTransformer(self.embedding_model_name)
+            
+            # Pre-compute embeddings in smaller batches to control memory
+            self.logger.info(f"Computing embeddings with batch size {self.embedding_batch_size}...")
+            embeddings = embedding_model.encode(
+                texts, 
+                batch_size=self.embedding_batch_size,
+                show_progress_bar=True,
+                convert_to_numpy=True
+            )
+            self.logger.info(f"Computed embeddings for {len(embeddings)} documents")
             
             # Custom vectorizer for Indonesian/English
             vectorizer_model = CountVectorizer(
@@ -119,18 +130,18 @@ class BERTopicTrainer:
                 min_df=2
             )
             
-            # Initialize BERTopic
+            # Initialize BERTopic with pre-computed embeddings
             topic_model = BERTopic(
                 embedding_model=embedding_model,
                 vectorizer_model=vectorizer_model,
                 min_topic_size=self.min_topic_size,
                 nr_topics=self.nr_topics,
-                calculate_probabilities=True,
+                calculate_probabilities=False,  # Disable to save memory
                 verbose=True
             )
             
-            # Fit model
-            topics, probs = topic_model.fit_transform(texts)
+            # Fit model with pre-computed embeddings
+            topics, _ = topic_model.fit_transform(texts, embeddings)
             
             self.logger.info(f"Training complete. Found {len(set(topics))} topics")
             
