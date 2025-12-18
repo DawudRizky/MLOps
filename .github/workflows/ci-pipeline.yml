@@ -19,19 +19,16 @@ jobs:
       
     - name: Validate docker-compose syntax
       run: |
-        cd /root/MLOps
         docker compose -f docker-compose.yml config > /dev/null 2>&1
         echo "✅ docker-compose.yml is valid"
         
     - name: Check DAG Python syntax
       run: |
-        cd /root/MLOps
         python3 -m py_compile airflow/dags/*.py 2>/dev/null || echo "⚠️  Some DAG files have syntax issues"
         echo "✅ DAG syntax check completed"
         
     - name: Lint Python code
       run: |
-        cd /root/MLOps
         python3 -m flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics 2>/dev/null || echo "No critical syntax errors"
         echo "✅ Linting completed"
 
@@ -43,7 +40,6 @@ jobs:
     steps:
     - name: Build Docker images
       run: |
-        cd /root/MLOps
         echo "Building Docker images..."
         docker build -t mlops-api:latest -f infrastructure/Dockerfile.api . || echo "API build skipped"
         docker build -t mlops-scraper:latest -f infrastructure/Dockerfile.scraper . || echo "Scraper build skipped"
@@ -52,7 +48,6 @@ jobs:
         
     - name: Tag images with commit SHA
       run: |
-        cd /root/MLOps
         export SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
         docker tag mlops-api:latest mlops-api:$SHORT_SHA 2>/dev/null || true
         docker tag mlops-scraper:latest mlops-scraper:$SHORT_SHA 2>/dev/null || true
