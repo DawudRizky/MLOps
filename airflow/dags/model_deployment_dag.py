@@ -376,6 +376,20 @@ with dag:
         trigger_rule='none_failed',
     )
     
+    # DVC model snapshot - version models after successful deployment
+    dvc_model_snapshot = BashOperator(
+        task_id='dvc_model_snapshot',
+        bash_command='bash /root/MLOps/scripts/dvc-model-snapshot.sh {{ var.value.mlflow_experiment_name }}',
+        trigger_rule='all_success',
+    )
+    
+    # DVC model cleanup - keep only 2 latest versions
+    dvc_model_cleanup = BashOperator(
+        task_id='dvc_model_cleanup',
+        bash_command='bash /root/MLOps/scripts/dvc-model-cleanup.sh',
+        trigger_rule='all_success',
+    )
+    
     # Rollback task (in case of failure)
     rollback = BashOperator(
         task_id='rollback',
