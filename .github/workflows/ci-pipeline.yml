@@ -16,6 +16,7 @@ jobs:
       with:
         submodules: false
         clean: false
+        fetch-depth: 1
       
     - name: Validate docker-compose syntax
       run: |
