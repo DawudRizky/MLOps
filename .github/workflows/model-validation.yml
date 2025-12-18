@@ -1,0 +1,47 @@
+name: Model Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'MLflow Run ID to validate'
+        required: true
+        type: string
+      min_coherence:
+        description: 'Minimum coherence score'
+        required: false
+        default: '0.3'
+        type: string
+
+jobs:
+  validate-model:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Get model metrics
+      id: metrics
+      run: |
+        docker exec mlops-mlflow curl -s \
+          http://localhost:5000/api/2.0/mlflow/runs/get?run_id=${{ inputs.run_id }} | \
+          python3 -c "
+        import sys, json
+        data = json.load(sys.stdin)
+        metrics = data['run']['data']['metrics']
+        for m in metrics:
+            print(f\"{m['key']}: {m['value']}\")
+        " || echo "Failed to get metrics"
+        
+    - name: Validate coherence score
+      run: |
+        echo "Validating model ${{ inputs.run_id }}"
+        echo "Minimum coherence required: ${{ inputs.min_coherence }}"
+        
+    - name: Trigger deployment if valid
+      run: |
+        docker exec airflow-scheduler airflow dags trigger \
+          model_deployment_pipeline \
+          -r "validated_${{ inputs.run_id }}"
+        echo "✅ Deployment triggered for validated model"

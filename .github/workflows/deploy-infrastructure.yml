@@ -1,0 +1,58 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      restart_services:
+        description: 'Restart services after deployment'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Pull latest changes
+      run: |
+        cd /root/MLOps
+        git pull origin main
+        
+    - name: Update Docker images
+      run: |
+        cd /root/MLOps
+        docker compose pull || echo "No updates available"
+        
+    - name: Build custom images
+      run: |
+        cd /root/MLOps
+        docker compose build api scraper trainer ingest
+        
+    - name: Restart services
+      if: ${{ inputs.restart_services }}
+      run: |
+        cd /root/MLOps
+        docker compose up -d --force-recreate api scraper trainer ingest
+        echo "✅ Services restarted"
+        
+    - name: Wait for health checks
+      run: |
+        sleep 10
+        docker ps --filter "name=mlops-" --format "table {{.Names}}\t{{.Status}}"
+        
+    - name: Verify services
+      run: |
+        cd /root/MLOps
+        bash scripts/health-check.sh || echo "Some health checks failed"

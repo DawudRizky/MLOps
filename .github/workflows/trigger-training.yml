@@ -1,0 +1,56 @@
+name: Trigger Model Training
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force training even outside schedule window'
+        required: false
+        default: true
+        type: boolean
+      experiment_name:
+        description: 'MLflow experiment name'
+        required: false
+        default: 'bertopic-pemerintah'
+        type: string
+
+jobs:
+  trigger-training:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Set Airflow variables
+      run: |
+        if [ "${{ inputs.force_run }}" = "true" ]; then
+          docker exec airflow-scheduler airflow variables set FORCE_RUN true
+          echo "✅ FORCE_RUN enabled"
+        fi
+        
+    - name: Trigger scraper DAG
+      run: |
+        RUN_ID=$(date +%s)
+        docker exec airflow-scheduler airflow dags trigger \
+          scraper_humanized_scheduler_optimized \
+          -r "github_action_$RUN_ID"
+        echo "✅ DAG triggered: github_action_$RUN_ID"
+        
+    - name: Monitor DAG execution
+      run: |
+        echo "Waiting for DAG to start..."
+        sleep 30
+        
+        RUN_ID="github_action_$(date +%s)"
+        docker exec airflow-scheduler airflow dags list-runs \
+          -d scraper_humanized_scheduler_optimized \
+          --no-backfill | head -5
+          
+    - name: Output monitoring commands
+      run: |
+        echo "📊 Monitor training progress:"
+        echo "  docker logs airflow-scheduler -f | grep trainer_task"
+        echo ""
+        echo "📊 Check MLflow UI:"
+        echo "  http://your-server:5000"
+        echo ""
+        echo "📊 Monitor deployment:"
+        echo "  docker exec airflow-scheduler airflow dags list-runs -d model_deployment_pipeline"
