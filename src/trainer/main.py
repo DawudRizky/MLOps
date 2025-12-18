@@ -409,9 +409,25 @@ class BERTopicTrainer:
                     'drift_detected': 1 if drift_info.get('drift_detected') else 0,
                 })
                 
-                # Log dataset snapshot as artifact (for quick access, DVC handles versioning)
+                # Log dataset using MLflow Dataset tracking
                 if dataset_path and os.path.exists(dataset_path):
-                    mlflow.log_artifact(dataset_path, artifact_path="dataset")
+                    # Create MLflow dataset object
+                    try:
+                        from mlflow.data.pandas_dataset import PandasDataset
+                        df = pd.read_csv(dataset_path)
+                        dataset = mlflow.data.from_pandas(
+                            df,
+                            source=dataset_path,
+                            name=f"tweets_{dataset_version}",
+                            targets="text"  # The text column is our target for training
+                        )
+                        mlflow.log_input(dataset, context="training")
+                        self.logger.info(f"📊 Logged dataset to MLflow: {dataset_version}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to log dataset object, using artifact: {e}")
+                        mlflow.log_artifact(dataset_path, artifact_path="dataset")
+                    
+                    # Also log metadata
                     metadata_path = dataset_path.replace('.csv', '.json')
                     if os.path.exists(metadata_path):
                         mlflow.log_artifact(metadata_path, artifact_path="dataset")
@@ -437,20 +453,47 @@ class BERTopicTrainer:
                 model_path = f"/tmp/bertopic_model_{run.info.run_id}.pkl"
                 with open(model_path, 'wb') as f:
                     pickle.dump(topic_model, f)
+                
+                # Create model signature with input/output schema
+                from mlflow.models.signature import infer_signature
+                
+                # Sample input/output for signature
+                sample_texts = texts[:5] if len(texts) >= 5 else texts
+                sample_input = pd.DataFrame({"text": sample_texts})
+                
+                try:
+                    # Get sample predictions
+                    topics, _ = topic_model.transform(sample_texts)
+                    sample_output = pd.DataFrame({"topic": topics})
+                    signature = infer_signature(sample_input, sample_output)
+                except Exception as e:
+                    self.logger.warning(f"Could not infer signature: {e}")
+                    signature = None
+                
+                # Create input example
+                input_example = sample_input.head(1)
+                
+                # Log model artifact with signature
                 mlflow.log_artifact(model_path, artifact_path="model")
                 self.logger.info("Logged model artifact to MLflow")
                 
-                # Register model in MLflow Model Registry
-                # Use pyfunc flavor for BERTopic model
+                # Register model in MLflow Model Registry with metadata
                 model_name = "bertopic-pemerintah-model"
                 try:
-                    # Log as pyfunc with custom loader
+                    # Log as pyfunc with signature and input example
                     mlflow.pyfunc.log_model(
                         artifact_path="registered_model",
-                        python_model=None,  # We'll use the pickle file
+                        python_model=None,
                         artifacts={"model_file": model_path},
                         registered_model_name=model_name,
-                        code_path=None
+                        signature=signature,
+                        input_example=input_example,
+                        code_path=None,
+                        pip_requirements=[
+                            f"bertopic=={topic_model.__version__ if hasattr(topic_model, '__version__') else '0.15.0'}",
+                            "sentence-transformers",
+                            "scikit-learn"
+                        ]
                     )
                     self.logger.info(f"✅ Registered model in MLflow Model Registry: {model_name}")
                 except Exception as e:
