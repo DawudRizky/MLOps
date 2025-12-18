@@ -5,3 +5,8 @@
     endpointurl = http://mlops-minio:9000
     access_key_id = minioadmin
     secret_access_key = minioadmin123
+['remote "minio-models"']
+    url = s3://mlops-models
+    endpointurl = http://mlops-minio:9000
+    access_key_id = minioadmin
+    secret_access_key = minioadmin123

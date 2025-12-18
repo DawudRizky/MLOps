@@ -1,0 +1,234 @@
+groups:
+  # ===================================
+  # CRITICAL: Infrastructure Alerts
+  # ===================================
+  - name: infrastructure_critical
+    interval: 30s
+    rules:
+      # Memory usage critical
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanize }}% (threshold: 90%)"
+
+      # Swap usage warning
+      - alert: HighSwapUsage
+        expr: (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / 1024 / 1024 / 1024 > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High swap usage on {{ $labels.instance }}"
+          description: "Swap usage is {{ $value | humanize }}GB (threshold: 2GB)"
+
+      # CPU usage sustained high
+      - alert: HighCPUUsage
+        expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Sustained high CPU usage"
+          description: "CPU usage is {{ $value | humanize }}% for 10+ minutes (threshold: 85%)"
+
+      # Disk space critical
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Critical disk space on {{ $labels.instance }}"
+          description: "Disk space is {{ $value | humanize }}% remaining (threshold: 10%)"
+
+      # Disk space warning
+      - alert: DiskSpaceWarning
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 20
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is {{ $value | humanize }}% remaining (threshold: 20%)"
+
+  # ===================================
+  # CRITICAL: Container Health
+  # ===================================
+  - name: container_health
+    interval: 30s
+    rules:
+      # Container OOM kills
+      - alert: ContainerOOMKilled
+        expr: rate(container_oom_events_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: docker
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+          description: "Container experiencing out-of-memory kills"
+
+      # Container high memory usage
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes{name=~"mlops-trainer|airflow-.*"} / container_spec_memory_limit_bytes) * 100 > 90
+        for: 2m
+        labels:
+          severity: warning
+          component: docker
+        annotations:
+          summary: "Container {{ $labels.name }} high memory usage"
+          description: "Memory usage is {{ $value | humanize }}% of limit"
+
+      # Container CPU throttling
+      - alert: ContainerCPUThrottling
+        expr: rate(container_cpu_cfs_throttled_seconds_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: docker
+        annotations:
+          summary: "Container {{ $labels.name }} is CPU throttled"
+          description: "Container experiencing CPU throttling ({{ $value | humanize }}s throttled time)"
+
+      # Container restarts
+      - alert: ContainerRestarting
+        expr: rate(container_last_seen{name=~"mlops-.*|airflow-.*"}[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: warning
+          component: docker
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting frequently"
+          description: "Container has restarted in the last 5 minutes"
+
+  # ===================================
+  # HIGH: Service Availability
+  # ===================================
+  - name: service_availability
+    interval: 60s
+    rules:
+      # Service down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute"
+
+      # MLflow unavailable
+      - alert: MLflowDown
+        expr: up{job="mlflow"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: mlflow
+        annotations:
+          summary: "MLflow server is down"
+          description: "MLflow tracking server is unavailable"
+
+      # MinIO unavailable
+      - alert: MinIODown
+        expr: up{job="minio"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: minio
+        annotations:
+          summary: "MinIO server is down"
+          description: "MinIO object storage is unavailable"
+
+      # API unavailable
+      - alert: APIDown
+        expr: up{job="api-blue"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API service is down"
+          description: "MLOps API (blue deployment) is unavailable"
+
+  # ===================================
+  # MEDIUM: Performance Degradation
+  # ===================================
+  - name: performance
+    interval: 60s
+    rules:
+      # API high response time
+      - alert: APIHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="api-blue"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API high response time"
+          description: "95th percentile response time is {{ $value | humanize }}s (threshold: 2s)"
+
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+  # ===================================
+  # MEDIUM: Database Health
+  # ===================================
+  - name: database_health
+    interval: 60s
+    rules:
+      # PostgreSQL container high memory
+      - alert: PostgreSQLHighMemory
+        expr: (container_memory_usage_bytes{name=~".*postgres"} / container_spec_memory_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL high memory usage"
+          description: "PostgreSQL memory usage is {{ $value | humanize }}% of limit"
+
+      # Redis container high memory
+      - alert: RedisHighMemory
+        expr: (container_memory_usage_bytes{name="mlops-redis"} / container_spec_memory_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis memory usage is {{ $value | humanize }}% of limit"
+
+  # ===================================
+  # MEDIUM: Storage Monitoring
+  # ===================================
+  - name: storage_monitoring
+    interval: 300s
+    rules:
+      # MinIO high disk usage
+      - alert: MinIOHighDiskUsage
+        expr: (container_fs_usage_bytes{name="mlops-minio"} / container_fs_limit_bytes{name="mlops-minio"}) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "MinIO disk usage high"
+          description: "MinIO storage is {{ $value | humanize }}% full (threshold: 80%)"

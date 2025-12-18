@@ -1,0 +1,76 @@
+global:
+  resolve_timeout: 5m
+  # SMTP configuration (update these with your email settings)
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alerts@mlops.local'
+  # smtp_auth_username: 'your-email@gmail.com'
+  # smtp_auth_password: 'your-app-password'
+
+# The root route with all parameters
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  routes:
+    # Critical alerts - immediate notification
+    - receiver: 'critical'
+      match:
+        severity: critical
+      group_wait: 0s
+      group_interval: 5m
+      repeat_interval: 4h
+    
+    # Warning alerts - grouped notification
+    - receiver: 'warning'
+      match:
+        severity: warning
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+
+# Inhibition rules
+inhibit_rules:
+  # Inhibit warning if critical is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+receivers:
+  # Default receiver (logs to console)
+  - name: 'default'
+    # webhook_configs:
+    #   - url: 'http://localhost:5001/alerts'
+
+  # Critical alerts receiver
+  - name: 'critical'
+    # Email notification (uncomment and configure SMTP above)
+    # email_configs:
+    #   - to: 'admin@mlops.local'
+    #     headers:
+    #       Subject: '[CRITICAL] MLOps Alert: {{ .GroupLabels.alertname }}'
+    
+    # Webhook for critical alerts (e.g., Slack, Discord, PagerDuty)
+    # webhook_configs:
+    #   - url: 'http://your-webhook-endpoint/critical'
+    #     send_resolved: true
+
+  # Warning alerts receiver
+  - name: 'warning'
+    # Email notification for warnings
+    # email_configs:
+    #   - to: 'team@mlops.local'
+    #     headers:
+    #       Subject: '[WARNING] MLOps Alert: {{ .GroupLabels.alertname }}'
+    
+    # Webhook for warnings
+    # webhook_configs:
+    #   - url: 'http://your-webhook-endpoint/warning'
+    #     send_resolved: true
+
+# Templates for alert messages
+templates:
+  - '/etc/alertmanager/template/*.tmpl'

@@ -8,15 +8,15 @@ global:
     cluster: 'mlops-pemerintah-tracker'
     environment: 'production'
 
-# Alertmanager configuration (optional)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: ['alertmanager:9093']
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
 
-# Load rules once and periodically evaluate them
-# rule_files:
-#   - "alerts.yml"
+# Load alert rules
+rule_files:
+  - "alerts.yml"
 
 scrape_configs:
   # Prometheus self-monitoring
@@ -26,59 +26,74 @@ scrape_configs:
         labels:
           service: 'prometheus'
 
+  # Container metrics - cAdvisor
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+
+  # Host system metrics - Node Exporter
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+    scrape_interval: 15s
+
   # FastAPI Backend (Blue)
   - job_name: 'api-blue'
     static_configs:
-      - targets: ['api-blue:8000']
+      - targets: ['mlops-api-blue:8000']
         labels:
           service: 'api'
           deployment: 'blue'
     metrics_path: '/metrics'
     scrape_interval: 10s
 
-  # FastAPI Backend (Green)
-  - job_name: 'api-green'
-    static_configs:
-      - targets: ['api-green:8000']
-        labels:
-          service: 'api'
-          deployment: 'green'
-    metrics_path: '/metrics'
-    scrape_interval: 10s
-
-  # MinIO Metrics
+  # MinIO Object Storage
   - job_name: 'minio'
     static_configs:
-      - targets: ['minio:9000']
+      - targets: ['mlops-minio:9000']
         labels:
           service: 'minio'
     metrics_path: '/minio/v2/metrics/cluster'
     scrape_interval: 30s
 
-  # PostgreSQL Exporter (if added later)
-  # - job_name: 'postgres'
-  #   static_configs:
-  #     - targets: ['postgres-exporter:9187']
-  #       labels:
-  #         service: 'postgres'
+  # MLflow Server
+  - job_name: 'mlflow'
+    static_configs:
+      - targets: ['mlops-mlflow:5000']
+        labels:
+          service: 'mlflow'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
 
-  # Redis Exporter (if added later)
-  # - job_name: 'redis'
-  #   static_configs:
-  #     - targets: ['redis-exporter:9121']
-  #       labels:
-  #         service: 'redis'
+  # Airflow Webserver (if metrics enabled)
+  - job_name: 'airflow-webserver'
+    static_configs:
+      - targets: ['airflow-webserver:8080']
+        labels:
+          service: 'airflow-webserver'
+    metrics_path: '/admin/metrics'
+    scrape_interval: 30s
 
-  # Node Exporter (if monitoring host metrics)
-  # - job_name: 'node'
-  #   static_configs:
-  #     - targets: ['node-exporter:9100']
-  #       labels:
-  #         service: 'node-exporter'
+  # Grafana self-monitoring
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['mlops-grafana:3000']
+        labels:
+          service: 'grafana'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
 
-  # Docker containers (via cAdvisor if added)
-  # - job_name: 'cadvisor'
-  #   static_configs:
-  #     - targets: ['cadvisor:8080']
-  #       labels:
-  #         service: 'cadvisor'
+  # Loki self-monitoring
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['mlops-loki:3100']
+        labels:
+          service: 'loki'
+    metrics_path: '/metrics'
+    scrape_interval: 30s

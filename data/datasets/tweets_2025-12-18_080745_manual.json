@@ -1,0 +1,21 @@
+{
+  "filename": "tweets_2025-12-18_080745_manual.csv",
+  "timestamp": "2025-12-18_080745_manual",
+  "row_count": 913,
+  "file_size_mb": 0.25,
+  "columns": [
+    "tweet_id",
+    "text",
+    "created_at",
+    "user_id",
+    "like_count",
+    "retweet_count",
+    "engagement_rate",
+    "lang"
+  ],
+  "date_range": {
+    "oldest": "2025-12-16T13:22:50",
+    "newest": "2025-12-18T08:02:29"
+  },
+  "exported_at": "2025-12-18T08:07:45.654429"
+}

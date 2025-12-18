@@ -19,6 +19,7 @@ from airflow.models import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
 from airflow.operators.bash import BashOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.models import Variable
 from datetime import datetime, timedelta, time
@@ -196,6 +197,26 @@ def load_repo_env(**context):
     return env
 
 
+def log_dvc_snapshot(**context):
+    """
+    Log that a dataset snapshot was created.
+    Actual DVC tracking happens via cron job or manual run of dvc-snapshot.sh
+    """
+    ti = context['ti']
+    scheduled = ti.xcom_pull(task_ids='decide_window', key='scheduled_window')
+    
+    window_name = scheduled.get('name', 'manual') if scheduled else 'manual'
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H%M%S")
+    
+    LOG.info("="*50)
+    LOG.info("Dataset snapshot created for training run")
+    LOG.info(f"Window: {window_name}")
+    LOG.info(f"Timestamp: {timestamp}")
+    LOG.info(f"Expected snapshot: tweets_{timestamp}_{window_name}.csv")
+    LOG.info("Run 'bash /root/MLOps/scripts/dvc-snapshot.sh' on host to track with DVC")
+    LOG.info("="*50)
+
+
 def persist_post_run(**context):
     """Mark window as successfully completed"""
     ti = context['ti']
@@ -309,11 +330,7 @@ with DAG(
                         {'source': '/root/MLOps/airflow/workspace/data/raw', 'target': '/app/data/raw', 'type': 'bind'},
                     ],
                     mem_limit='512m',
-                    docker_host_config={
-                        'nano_cpus': int(0.15 * 1e9),
-                        'cpu_period': 100000,
-                        'cpu_quota': 15000,
-                    },
+                    cpus=0.15,
                 )
             except Exception:
                 LOG.exception('Failed to create scraper_task DockerOperator')
@@ -348,11 +365,7 @@ with DAG(
                         {'source': '/root/MLOps/airflow/workspace/data', 'target': '/app/data', 'type': 'bind'},
                     ],
                     mem_limit='512m',
-                    docker_host_config={
-                        'nano_cpus': int(0.15 * 1e9),
-                        'cpu_period': 100000,
-                        'cpu_quota': 15000,
-                    },
+                    cpus=0.15,
                 )
             except Exception:
                 LOG.exception('Failed to create ingest_task DockerOperator')
@@ -384,11 +397,7 @@ with DAG(
                         {'source': '/root/MLOps/airflow/workspace/reports', 'target': '/app/reports', 'type': 'bind'},
                     ],
                     mem_limit='512m',
-                    docker_host_config={
-                        'nano_cpus': int(0.15 * 1e9),
-                        'cpu_period': 100000,
-                        'cpu_quota': 15000,
-                    },
+                    cpus=0.15,
                 )
             except Exception:
                 LOG.exception('Failed to create quality_gate_task DockerOperator')
@@ -430,12 +439,8 @@ with DAG(
                         {'source': '/root/MLOps/airflow/workspace/reports', 'target': '/app/reports', 'type': 'bind'},
                         {'source': '/root/MLOps/data', 'target': '/app/data', 'type': 'bind'},  # Mount for dataset snapshots
                     ],
-                    mem_limit='4096m',  # 4GB for training with lightweight embedding model
-                    docker_host_config={
-                        'nano_cpus': int(0.37 * 1e9),  # 0.37 cores = 370,000,000 nanocpus (37% of 1 core)
-                        'cpu_period': 100000,  # Standard CPU period (100ms)
-                        'cpu_quota': 37000,  # 37% of period = 0.37 cores
-                    },
+                    mem_limit='2048m',  # 2GB memory limit (system only has ~1GB free)
+                    cpus=0.37,  # 0.37 cores (37% of 1 core)
                 )
             except Exception:
                 LOG.exception('Failed to create trainer_task DockerOperator')
@@ -446,10 +451,11 @@ with DAG(
         # Sequential execution: scraper → ingest → quality → trainer
         scraper >> ingest >> quality_gate >> trainer
 
-    # DVC snapshot task - version the dataset after successful training
-    dvc_snapshot = BashOperator(
+    # DVC snapshot logging - actual DVC tracking runs via cron or manual script
+    dvc_snapshot = PythonOperator(
         task_id='dvc_snapshot',
-        bash_command='bash /root/MLOps/scripts/dvc-snapshot.sh',
+        python_callable=log_dvc_snapshot,
+        provide_context=True,
         trigger_rule='all_success',  # Only run if all upstream tasks succeeded
     )
 
@@ -459,5 +465,14 @@ with DAG(
         provide_context=True
     )
 
+    # Trigger deployment if training succeeded
+    trigger_deployment = TriggerDagRunOperator(
+        task_id='trigger_deployment',
+        trigger_dag_id='model_deployment_pipeline',
+        wait_for_completion=False,
+        conf={'triggered_by': 'scraper_humanized_scheduler_optimized'},
+        trigger_rule='all_success',  # Only trigger if training succeeded
+    )
+
     decide >> [pipeline, do_skip]
-    pipeline >> dvc_snapshot >> persist
+    pipeline >> dvc_snapshot >> persist >> trigger_deployment

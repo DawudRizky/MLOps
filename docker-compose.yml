@@ -238,6 +238,7 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./infrastructure/configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/configs/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -254,8 +255,6 @@ services:
     networks:
       - mlops-network
     restart: unless-stopped
-    profiles:
-      - monitoring  # Optional - start with: --profile monitoring
     deploy:
       resources:
         limits:
@@ -265,19 +264,111 @@ services:
           memory: 256M
 
   # ===================================
+  # ALERTING: AlertManager
+  # ===================================
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: mlops-alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./infrastructure/configs/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mlops-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.03'
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  # ===================================
+  # CONTAINER METRICS: cAdvisor
+  # ===================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: mlops-cadvisor
+    command:
+      - '--housekeeping_interval=10s'
+      - '--disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process'
+      - '--store_container_labels=true'
+      - '--docker_only=false'
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - mlops-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.05'
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  # ===================================
+  # HOST METRICS: Node Exporter
+  # ===================================
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: mlops-node-exporter
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - mlops-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.03'
+          memory: 64M
+        reservations:
+          memory: 32M
+
+  # ===================================
   # VISUALIZATION: Grafana
   # ===================================
   grafana:
     image: grafana/grafana:latest
     container_name: mlops-grafana
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     depends_on:
       - prometheus
       - loki
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Disable plugin installation to avoid network errors
+      # GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/configs/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
@@ -291,15 +382,13 @@ services:
     networks:
       - mlops-network
     restart: unless-stopped
-    profiles:
-      - monitoring  # Optional - start with: --profile monitoring
     deploy:
       resources:
         limits:
-          cpus: '0.05'
-          memory: 256M
+          cpus: '0.10'
+          memory: 384M
         reservations:
-          memory: 128M
+          memory: 192M
 
   # ===================================
   # LOGGING: Loki
@@ -321,8 +410,6 @@ services:
     networks:
       - mlops-network
     restart: unless-stopped
-    profiles:
-      - monitoring  # Optional - start with: --profile monitoring
     deploy:
       resources:
         limits:
@@ -347,8 +434,6 @@ services:
     networks:
       - mlops-network
     restart: unless-stopped
-    profiles:
-      - monitoring  # Optional - start with: --profile monitoring
     deploy:
       resources:
         limits:
@@ -458,6 +543,7 @@ services:
       - "${NGINX_HTTPS_PORT:-443}:443"
     depends_on:
       - api-blue
+      - dashboard-blue
     volumes:
       - ./infrastructure/configs/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infrastructure/configs/nginx-blue.conf:/etc/nginx/conf.d/active.conf:ro
@@ -469,8 +555,6 @@ services:
     networks:
       - mlops-network
     restart: unless-stopped
-    profiles:
-      - nginx  # Optional - skip to save resources, access API directly
     deploy:
       resources:
         limits:
@@ -480,15 +564,15 @@ services:
           memory: 64M
 
   # ===================================
-  # DASHBOARD: BERTopic Visualization Frontend
+  # DASHBOARD: BERTopic Visualization Frontend (Blue)
   # ===================================
-  dashboard:
+  dashboard-blue:
     build:
       context: /root/MLOps
       dockerfile: infrastructure/Dockerfile.dashboard
-    container_name: mlops-dashboard
+    container_name: mlops-dashboard-blue
     ports:
-      - "8003:8000"
+      - "${BLUE_DASHBOARD_PORT:-8003}:8000"
     depends_on:
       - mlflow
     environment:
@@ -508,6 +592,38 @@ services:
           memory: 512M
         reservations:
           memory: 256M
+
+  # ===================================
+  # DASHBOARD: BERTopic Visualization Frontend (Green)
+  # ===================================
+  dashboard-green:
+    build:
+      context: /root/MLOps
+      dockerfile: infrastructure/Dockerfile.dashboard
+    container_name: mlops-dashboard-green
+    ports:
+      - "${GREEN_DASHBOARD_PORT:-8004}:8000"
+    depends_on:
+      - mlflow
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      EXPERIMENT_NAME: bertopic-pemerintah
+      FLASK_ENV: production
+      AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    networks:
+      - mlops-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.15'
+          memory: 512M
+        reservations:
+          memory: 256M
+    profiles:
+      - green  # Only start when explicitly enabled
 
   # ===================================
   # SCRAPER: Twitter Data Collection
