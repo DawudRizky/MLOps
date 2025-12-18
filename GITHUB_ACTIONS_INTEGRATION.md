@@ -2,7 +2,230 @@
 
 ## 🎯 Overview
 
-GitHub Actions handles **CI/CD for code** while Airflow handles **ML pipeline orchestration**.
+GitHub Actions handles **CI/CD for code validation** while Airflow handles **ML pipeline orchestration**.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    GitHub Actions                           │
+│         (CI: Code Quality & Docker Builds)                  │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Airflow DAGs                             │
+│  (ML Pipeline: Scraper → Training → Deployment)            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 📦 Self-Hosted Runner Setup
+
+### Installation
+Runner is installed at: `/opt/actions-runner`
+Service: `actions.runner.DawudRizky-MLOps.mlops-server.service`
+
+### Management Commands
+```bash
+# Check status
+sudo systemctl status actions.runner.DawudRizky-MLOps.mlops-server
+
+# Start/Stop/Restart
+sudo systemctl start actions.runner.DawudRizky-MLOps.mlops-server
+sudo systemctl stop actions.runner.DawudRizky-MLOps.mlops-server
+sudo systemctl restart actions.runner.DawudRizky-MLOps.mlops-server
+
+# View logs
+sudo journalctl -u actions.runner.DawudRizky-MLOps.mlops-server -f
+```
+
+## 🔄 CI Pipeline Workflow
+
+### **CI Pipeline** (`.github/workflows/ci-pipeline.yml`)
+**Trigger**: Automatic on push/PR to `main` or `develop`
+
+**Jobs**:
+
+1. **validate** - Code & Configuration Validation
+   - ✅ Validates docker-compose.yml syntax
+   - ✅ Checks DAG Python syntax
+   - ✅ Lints Python code (flake8)
+
+2. **build-images** - Docker Image Build (main branch only)
+   - 🐳 Builds all Docker images
+   - 🏷️ Tags with commit SHA
+   - ⏩ Runs only after validation passes
+
+**What it does**:
+- Runs on every code push or pull request
+- Validates configuration files
+- Checks Python syntax errors
+- Builds Docker images on main branch
+- Tags images with git commit SHA for versioning
+
+**Integration**:
+```
+Git Push → GitHub Actions CI → Validation → Build Images (if main branch)
+```
+
+## 🔗 Integration Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Code Changes                              │
+│                  (Git Push/PR)                               │
+└────────────────────┬─────────────────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│              GitHub Actions: CI Pipeline                     │
+│  Job 1: Validate                                             │
+│    • Validate docker-compose.yml                             │
+│    • Check DAG syntax                                        │
+│    • Lint Python code                                        │
+│                                                              │
+│  Job 2: Build Images (main branch only)                     │
+│    • Build Docker images                                     │
+│    • Tag with commit SHA                                     │
+└──────────────────────────────────────────────────────────────┘
+                     │
+                     │ (Manual deployment via docker compose)
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│              Airflow: Scraper DAG                            │
+│  1. Scrape data                                              │
+│  2. Ingest & quality check                                   │
+│  3. Train BERTopic model                                     │
+│  4. Log to MLflow                                            │
+│  5. Version with DVC                                         │
+│  6. Trigger Deployment DAG                                   │
+└────────────────────┬─────────────────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│           Airflow: Deployment DAG                            │
+│  1. Check new model in MLflow                                │
+│  2. Validate model quality                                   │
+│  3. Build Docker images                                      │
+│  4. Blue-Green deployment                                    │
+│  5. DVC model snapshot (keep 2 latest)                       │
+│  6. Health checks & traffic switch                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Separation of Concerns
+
+| Responsibility | Tool | Purpose |
+|---------------|------|---------|
+| **Code Quality** | GitHub Actions | Validation, linting, syntax checks |
+| **Image Building** | GitHub Actions | Build & tag Docker images |
+| **ML Pipeline** | Airflow | Automated data → model → deployment |
+| **Experiment Tracking** | MLflow | Model versioning, metrics |
+| **Data Versioning** | DVC | Dataset & model artifacts |
+| **Serving** | Docker + Nginx | Blue-green deployment |
+
+## 🎯 Common Workflows
+
+### Workflow: Deploy Code Changes
+```bash
+# 1. Push code to GitHub
+git add .
+git commit -m "Updated training parameters"
+git push origin main
+
+# 2. GitHub Actions automatically:
+#    - Validates configs
+#    - Checks syntax
+#    - Builds Docker images (main branch)
+#    - Tags with commit SHA
+
+# 3. Manually deploy updates:
+cd /root/MLOps
+docker compose pull  # Pull any updated base images
+docker compose up -d --build  # Rebuild and restart services
+```
+
+## 🔒 Security & Permissions
+
+### Runner User
+- User: `github-runner`
+- Groups: `docker` (can run Docker commands)
+- Home: `/home/github-runner`
+
+### Access Control
+```bash
+# GitHub runner can:
+✅ Run Docker commands (docker compose, docker build)
+✅ Access /root/MLOps files
+✅ Validate configurations
+✅ Build images
+
+# GitHub runner cannot:
+❌ Automatically deploy (requires manual intervention)
+❌ Modify system files (requires sudo)
+```
+
+## 📊 Monitoring
+
+### View Workflow Runs
+```
+GitHub Repository → Actions tab
+```
+
+### View Runner Status
+```bash
+# Check if runner is active
+sudo systemctl status actions.runner.DawudRizky-MLOps.mlops-server
+
+# View runner logs
+sudo journalctl -u actions.runner.DawudRizky-MLOps.mlops-server -f -n 50
+
+# Check runner in GitHub
+Repository → Settings → Actions → Runners
+```
+
+## 🔧 Troubleshooting
+
+### Runner Not Showing in GitHub
+```bash
+# Check service status
+sudo systemctl status actions.runner.DawudRizky-MLOps.mlops-server
+
+# Restart runner
+sudo systemctl restart actions.runner.DawudRizky-MLOps.mlops-server
+
+# Check logs for errors
+sudo journalctl -u actions.runner.DawudRizky-MLOps.mlops-server -n 100
+```
+
+### Workflow Fails to Access Docker
+```bash
+# Ensure github-runner is in docker group
+sudo usermod -aG docker github-runner
+
+# Restart runner
+sudo systemctl restart actions.runner.DawudRizky-MLOps.mlops-server
+```
+
+### Permission Errors
+```bash
+# Check ownership
+ls -la /opt/actions-runner
+
+# Fix if needed
+sudo chown -R github-runner:github-runner /opt/actions-runner
+```
+
+### Git Submodule Errors
+The workflow is configured with `submodules: false` to avoid submodule issues. If you need submodules, update the checkout step in the workflow.
+
+## 🎉 Summary
+
+✅ **Self-hosted runner**: Active and ready
+✅ **1 workflow**: CI Pipeline (validate + build)
+✅ **Integration**: GitHub Actions validates → Airflow orchestrates ML
+✅ **Automated**: CI on every push/PR
+✅ **Manual**: Deployment via docker compose
+
+**Your CI pipeline is now GitHub-powered!** 🚀
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

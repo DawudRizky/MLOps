@@ -66,7 +66,7 @@ def check_new_model(**context):
     
     try:
         # Get latest successful run
-        response = requests.get(
+        response = requests.post(
             f"{mlflow_uri}/api/2.0/mlflow/runs/search",
             json={
                 "experiment_names": [experiment_name],
