@@ -18,6 +18,7 @@ from __future__ import annotations
 from airflow.models import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
+from airflow.operators.bash import BashOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.models import Variable
 from datetime import datetime, timedelta, time
@@ -299,13 +300,20 @@ with DAG(
                         'POSTGRES_USER': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['POSTGRES_USER'] }}",
                         'POSTGRES_PASSWORD': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['POSTGRES_PASSWORD'] }}",
                         'LOG_LEVEL': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['LOG_LEVEL'] }}",
+                        'OMP_NUM_THREADS': '1',
+                        'MKL_NUM_THREADS': '1',
+                        'OPENBLAS_NUM_THREADS': '1',
                     },
                     mounts=[
                         {'source': '/root/MLOps/airflow/workspace/cookies.json', 'target': '/app/cookies.json', 'type': 'bind', 'read_only': True},
                         {'source': '/root/MLOps/airflow/workspace/data/raw', 'target': '/app/data/raw', 'type': 'bind'},
                     ],
-                    mem_limit='512m',  # Strict limit for 2 CPU VPS
-                    cpus=0.5,
+                    mem_limit='512m',
+                    docker_host_config={
+                        'nano_cpus': int(0.15 * 1e9),
+                        'cpu_period': 100000,
+                        'cpu_quota': 15000,
+                    },
                 )
             except Exception:
                 LOG.exception('Failed to create scraper_task DockerOperator')
@@ -333,12 +341,18 @@ with DAG(
                         'REDIS_HOST': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['REDIS_HOST'] }}",
                         'REDIS_PORT': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['REDIS_PORT'] }}",
                         'LOG_LEVEL': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['LOG_LEVEL'] }}",
+                        'OMP_NUM_THREADS': '1',
+                        'MKL_NUM_THREADS': '1',
                     },
                     mounts=[
                         {'source': '/root/MLOps/airflow/workspace/data', 'target': '/app/data', 'type': 'bind'},
                     ],
                     mem_limit='512m',
-                    cpus=0.5,
+                    docker_host_config={
+                        'nano_cpus': int(0.15 * 1e9),
+                        'cpu_period': 100000,
+                        'cpu_quota': 15000,
+                    },
                 )
             except Exception:
                 LOG.exception('Failed to create ingest_task DockerOperator')
@@ -363,12 +377,18 @@ with DAG(
                         'REDIS_HOST': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['REDIS_HOST'] }}",
                         'REDIS_PORT': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['REDIS_PORT'] }}",
                         'LOG_LEVEL': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['LOG_LEVEL'] }}",
+                        'OMP_NUM_THREADS': '1',
+                        'MKL_NUM_THREADS': '1',
                     },
                     mounts=[
                         {'source': '/root/MLOps/airflow/workspace/reports', 'target': '/app/reports', 'type': 'bind'},
                     ],
                     mem_limit='512m',
-                    cpus=0.5,
+                    docker_host_config={
+                        'nano_cpus': int(0.15 * 1e9),
+                        'cpu_period': 100000,
+                        'cpu_quota': 15000,
+                    },
                 )
             except Exception:
                 LOG.exception('Failed to create quality_gate_task DockerOperator')
@@ -400,13 +420,22 @@ with DAG(
                         'REDIS_HOST': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['REDIS_HOST'] }}",
                         'REDIS_PORT': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['REDIS_PORT'] }}",
                         'LOG_LEVEL': "{{ ti.xcom_pull(task_ids='decide_window', key='scheduled_window')['env']['LOG_LEVEL'] }}",
+                        'OMP_NUM_THREADS': '1',  # Limit OpenMP threads
+                        'MKL_NUM_THREADS': '1',  # Limit MKL threads
+                        'OPENBLAS_NUM_THREADS': '1',  # Limit OpenBLAS threads
+                        'NUMEXPR_NUM_THREADS': '1',  # Limit NumExpr threads
                     },
                     mounts=[
                         {'source': '/root/MLOps/airflow/workspace/models', 'target': '/app/models', 'type': 'bind'},
                         {'source': '/root/MLOps/airflow/workspace/reports', 'target': '/app/reports', 'type': 'bind'},
+                        {'source': '/root/MLOps/data', 'target': '/app/data', 'type': 'bind'},  # Mount for dataset snapshots
                     ],
-                    mem_limit='2560m',  # 2.5GB for training (acceptable if it takes longer)
-                    cpus=1.0,
+                    mem_limit='4096m',  # 4GB for training with lightweight embedding model
+                    docker_host_config={
+                        'nano_cpus': int(0.37 * 1e9),  # 0.37 cores = 370,000,000 nanocpus (37% of 1 core)
+                        'cpu_period': 100000,  # Standard CPU period (100ms)
+                        'cpu_quota': 37000,  # 37% of period = 0.37 cores
+                    },
                 )
             except Exception:
                 LOG.exception('Failed to create trainer_task DockerOperator')
@@ -417,6 +446,13 @@ with DAG(
         # Sequential execution: scraper → ingest → quality → trainer
         scraper >> ingest >> quality_gate >> trainer
 
+    # DVC snapshot task - version the dataset after successful training
+    dvc_snapshot = BashOperator(
+        task_id='dvc_snapshot',
+        bash_command='bash /root/MLOps/scripts/dvc-snapshot.sh',
+        trigger_rule='all_success',  # Only run if all upstream tasks succeeded
+    )
+
     persist = PythonOperator(
         task_id='persist_post_run',
         python_callable=persist_post_run,
@@ -424,4 +460,4 @@ with DAG(
     )
 
     decide >> [pipeline, do_skip]
-    pipeline >> persist
+    pipeline >> dvc_snapshot >> persist

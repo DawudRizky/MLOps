@@ -44,13 +44,110 @@ class BERTopicTrainer:
         mlflow.set_tracking_uri(self.config.mlflow_tracking_uri)
         mlflow.set_experiment("bertopic-pemerintah")
         
-        # Model config - LOWERED FOR TESTING
-        self.embedding_model_name = "indobenchmark/indobert-base-p1"
-        self.min_topic_size = 2  # Lowered from 10 for testing with small dataset
+        # Model config - Use environment variable or lightweight default
+        self.embedding_model_name = os.getenv(
+            "EMBEDDING_MODEL", 
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        )
+        self.min_topic_size = int(os.getenv("MIN_TOPIC_SIZE", "2"))  # Lowered from 10 for testing with small dataset
         self.nr_topics = "auto"
-        self.embedding_batch_size = 16  # Process embeddings in smaller batches to reduce memory
+        self.embedding_batch_size = 8  # Reduced to 8 for memory efficiency on limited resources
+        self.max_training_samples = int(os.getenv("MAX_TRAINING_SAMPLES", "1000"))  # Limit dataset size
         
         self.logger.info("Initialized BERTopic Trainer")
+    
+    def export_dataset_snapshot(self, df: pd.DataFrame, run_timestamp: str) -> Optional[str]:
+        """
+        Export training dataset to CSV for DVC versioning.
+        
+        Args:
+            df: Training dataframe
+            run_timestamp: Timestamp identifier for this run (e.g., '2025-12-18_morning')
+            
+        Returns:
+            Path to exported CSV file or None if failed
+        """
+        try:
+            # Create datasets directory if not exists
+            datasets_dir = os.path.join('/app/data', 'datasets')
+            os.makedirs(datasets_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            filename = f"tweets_{run_timestamp}.csv"
+            filepath = os.path.join(datasets_dir, filename)
+            
+            # Export to CSV with metadata
+            df_export = df.copy()
+            df_export['export_timestamp'] = datetime.now().isoformat()
+            df_export['dataset_version'] = run_timestamp
+            
+            df_export.to_csv(filepath, index=False, encoding='utf-8')
+            
+            file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+            self.logger.info(f"📊 Exported dataset snapshot: {filename} ({file_size_mb:.2f} MB, {len(df)} rows)")
+            
+            # Also save metadata JSON
+            metadata = {
+                'filename': filename,
+                'timestamp': run_timestamp,
+                'row_count': len(df),
+                'file_size_mb': round(file_size_mb, 2),
+                'columns': list(df.columns),
+                'date_range': {
+                    'oldest': df['created_at'].min().isoformat() if 'created_at' in df else None,
+                    'newest': df['created_at'].max().isoformat() if 'created_at' in df else None,
+                },
+                'exported_at': datetime.now().isoformat()
+            }
+            
+            metadata_path = filepath.replace('.csv', '.json')
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            return filepath
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting dataset snapshot: {e}")
+            return None
+    
+    def cleanup_old_tweets(self, retention_days: int = 7) -> int:
+        """
+        Delete tweets older than retention_days to prevent data from piling up.
+        
+        Args:
+            retention_days: Number of days to retain tweets (default: 7)
+            
+        Returns:
+            Number of tweets deleted
+        """
+        try:
+            cutoff_time = datetime.now() - timedelta(days=retention_days)
+            
+            # First count how many will be deleted
+            count_query = "SELECT COUNT(*) FROM tweets WHERE created_at < %s"
+            result = self.db.fetch_one(count_query, (cutoff_time,))
+            count_to_delete = result[0] if result else 0
+            
+            if count_to_delete == 0:
+                self.logger.info(f"No tweets older than {retention_days} days to delete")
+                return 0
+            
+            # Delete old tweets
+            delete_query = "DELETE FROM tweets WHERE created_at < %s"
+            success = self.db.execute(delete_query, (cutoff_time,))
+            
+            if success:
+                self.logger.info(f"🗑️ Deleted {count_to_delete} tweets older than {retention_days} days (before {cutoff_time.isoformat()})")
+                metrics.counter('tweets_deleted', count_to_delete, {'retention_days': retention_days})
+                return count_to_delete
+            else:
+                self.logger.error("Failed to delete old tweets")
+                return 0
+                
+        except Exception as e:
+            self.logger.error(f"Error cleaning up old tweets: {e}")
+            metrics.record_error('tweet_cleanup', str(e))
+            return 0
     
     def get_training_data(self, hours: int = 168) -> Optional[pd.DataFrame]:
         """
@@ -77,9 +174,10 @@ class BERTopicTrainer:
                     AND char_count >= 20
                     AND lang IN ('id', 'in', 'en')
                 ORDER BY created_at DESC
+                LIMIT %s
             """
             
-            rows = self.db.fetch_dict(query, (cutoff_time,))
+            rows = self.db.fetch_dict(query, (cutoff_time, self.max_training_samples))
             
             if not rows:
                 self.logger.warning("No training data available")
@@ -289,7 +387,7 @@ class BERTopicTrainer:
             self.logger.error(f"Error saving model: {e}")
             return False
     
-    def log_to_mlflow(self, topic_model: BERTopic, texts: List[str], eval_metrics: Dict[str, Any], drift_info: Dict[str, Any]) -> str:
+    def log_to_mlflow(self, topic_model: BERTopic, texts: List[str], eval_metrics: Dict[str, Any], drift_info: Dict[str, Any], dataset_version: str = None, dataset_path: str = None) -> str:
         """Log model and metrics to MLflow."""
         try:
             with mlflow.start_run() as run:
@@ -299,12 +397,25 @@ class BERTopicTrainer:
                 mlflow.log_param("num_documents", len(texts))
                 mlflow.log_param("nr_topics", self.nr_topics)
                 
+                # Log dataset version for DVC tracking
+                if dataset_version:
+                    mlflow.log_param("dataset_version", dataset_version)
+                    mlflow.set_tag("dataset_version", dataset_version)
+                
                 # Log metrics
                 mlflow.log_metrics(eval_metrics)
                 mlflow.log_metrics({
                     'drift_score': drift_info.get('drift_score', 0),
                     'drift_detected': 1 if drift_info.get('drift_detected') else 0,
                 })
+                
+                # Log dataset snapshot as artifact (for quick access, DVC handles versioning)
+                if dataset_path and os.path.exists(dataset_path):
+                    mlflow.log_artifact(dataset_path, artifact_path="dataset")
+                    metadata_path = dataset_path.replace('.csv', '.json')
+                    if os.path.exists(metadata_path):
+                        mlflow.log_artifact(metadata_path, artifact_path="dataset")
+                    self.logger.info(f"📎 Logged dataset snapshot to MLflow: {dataset_version}")
                 
                 # Log topic info as artifact
                 topic_info = topic_model.get_topic_info()
@@ -370,6 +481,12 @@ class BERTopicTrainer:
             self.logger.info("Starting BERTopic training")
             self.logger.info("="*50)
             
+            # Clean up old tweets (keep only last 7 days)
+            retention_days = int(os.getenv("TWEET_RETENTION_DAYS", "7"))
+            deleted_count = self.cleanup_old_tweets(retention_days=retention_days)
+            if deleted_count > 0:
+                self.logger.info(f"Cleanup: Removed {deleted_count} tweets older than {retention_days} days")
+            
             # Check quality gate
             quality_check = self.cache.get_json('latest_quality_check')
             if quality_check and not quality_check.get('overall_passed'):
@@ -382,6 +499,12 @@ class BERTopicTrainer:
             if df is None or len(df) < 10:  # Lowered from 100 for testing
                 self.logger.warning(f"Insufficient training data: {len(df) if df is not None else 0} tweets")
                 return None
+            
+            # Export dataset snapshot for DVC versioning
+            run_timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            window_name = os.getenv('WINDOW_NAME', 'manual')
+            dataset_version = f"{run_timestamp}_{window_name}"
+            dataset_path = self.export_dataset_snapshot(df, dataset_version)
             
             # Prepare texts
             texts = self.prepare_data(df)
@@ -404,8 +527,9 @@ class BERTopicTrainer:
             current_topics = {i: topic_model.get_topic(i) for i in range(eval_metrics['num_topics'])}
             drift_info = self.detect_topic_drift(current_topics, previous_run_id)
             
-            # Log to MLflow
-            run_id = self.log_to_mlflow(topic_model, texts, eval_metrics, drift_info)
+            # Log to MLflow with dataset version
+            run_id = self.log_to_mlflow(topic_model, texts, eval_metrics, drift_info, 
+                                       dataset_version=dataset_version, dataset_path=dataset_path)
             
             if run_id:
                 # Model is stored via MLflow artifacts/registry; no separate backup upload

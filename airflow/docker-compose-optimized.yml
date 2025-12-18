@@ -47,10 +47,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.25'
+          cpus: '0.06'
           memory: 512M
         reservations:
-          cpus: '0.1'
+          cpus: '0.03'
           memory: 256M
 
   # Airflow Webserver - UI for monitoring
@@ -78,10 +78,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: '0.10'
           memory: 1G
         reservations:
-          cpus: '0.2'
+          cpus: '0.05'
           memory: 512M
 
   # Airflow Scheduler - core orchestration (runs tasks sequentially)
@@ -107,10 +107,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: '0.10'
           memory: 1G
         reservations:
-          cpus: '0.2'
+          cpus: '0.05'
           memory: 512M
 
   # Init service - runs database migrations and creates admin user
